@@ -1,81 +1,85 @@
-from enum import Enum
+from __future__ import annotations
+
+from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
+
 import polars as pl
-from polars.type_aliases import IntoExpr
 from polars.plugins import register_plugin_function
 
-from polars_fuzzy_match.util import parse_into_expr
+if TYPE_CHECKING:
+    from polars._typing import IntoExpr
 
 
-
-class Normalization(Enum):
-    """
-    Enum representing different values for configuring handling of unicode
-    normalization when matching against a pattern.
-
-    Attributes:
-        NEVER:
-            Neither the pattern nor the string being search is normalized.
-            Characters do not match against their normalized version (a != ä).
-
-        SMART:
-            The pattern is not normalized but the string being searched is
-            normalized. If the pattern is 'äää' and the string being searched is
-            'aaa', both do not match. However if the pattern is 'aaa' and the string
-            being search is 'äää', the string is normalized to 'aaa' and then
-            matched
-    """
-
-    NEVER = 'Never'
-    SMART = 'Smart'
-
-    def __str__(self) -> str:
-        return self.value
+__all__ = ["CaseMatching", "Normalization", "fuzzy_match_score"]
 
 
-class CaseMatching(Enum):
-    """
-    Enum representing different values for configuring case mismatch (how to
-    treat uppercase and lowercase characters when searching)
+class Normalization(StrEnum):
+    """Configure unicode normalization when matching patterns.
 
     Attributes:
-        RESPECT:
-            the pattern matches case exactly
-
-        IGNORE:
-            both the pattern and the string being searched for the pattern
-            are lowercased before carrying out the search.
-
-        SMART:
-            If the pattern contains only lowercase letters, then the string
-            being search is lowercased before search. If the pattern contains
-            one or more uppercase letters, the pattern matches case exactly
+        NEVER: Characters do not match their normalized form (a ≠ ä).
+        SMART: Search strings are normalized; pattern is not. Asymmetric.
     """
 
-    RESPECT = 'Respect'
-    IGNORE = 'Ignore'
-    SMART = 'Smart'
+    NEVER = "Never"
+    SMART = "Smart"
 
-    def __str__(self) -> str:
-        return self.value
+
+class CaseMatching(StrEnum):
+    """Configure case sensitivity when matching patterns.
+
+    Attributes:
+        RESPECT: Pattern matches case exactly.
+        IGNORE: Both pattern and search strings are lowercased.
+        SMART: Case-insensitive if pattern is lowercase; case-sensitive if mixed.
+    """
+
+    RESPECT = "Respect"
+    IGNORE = "Ignore"
+    SMART = "Smart"
 
 
 def fuzzy_match_score(
     expr: IntoExpr,
-    pattern: str,
+    pattern: IntoExpr,
     normalization: Normalization = Normalization.SMART,
     case_matching: CaseMatching = CaseMatching.SMART,
 ) -> pl.Expr:
-    expr = parse_into_expr(expr)
+    """Fuzzy match strings using fzf-style pattern syntax.
+
+    Parameters
+    ----------
+    expr
+        Column or expression to match against.
+    pattern
+        Column or expression containing the search pattern for each row.
+        Strings name columns; use pl.lit("bar") for a literal pattern.
+        Supports fzf syntax: fuzzy (bar), exact ('foo), prefix (^music),
+        suffix (.mp3$), and negation (!fire).
+    normalization
+        How to handle unicode normalization.
+    case_matching
+        How to treat case differences.
+
+    Returns
+    -------
+    polars.Expr
+        Unsigned 32-bit integer scores, or null for non-matches.
+        Higher scores indicate closer matches.
+    """
+    if not isinstance(expr, pl.Expr):
+        expr = pl.col(expr) if isinstance(expr, str) else pl.lit(expr)
+    if not isinstance(pattern, pl.Expr):
+        pattern = pl.col(pattern) if isinstance(pattern, str) else pl.lit(pattern)
+
     return register_plugin_function(
         plugin_path=Path(__file__).parent,
         function_name="fuzzy_match_score",
         is_elementwise=True,
-        args=expr,
+        args=[expr, pattern],
         kwargs={
-            "pattern": pattern,
             "normalization": str(normalization),
             "case_matching": str(case_matching),
         },
     )
-
