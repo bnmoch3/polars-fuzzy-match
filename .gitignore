@@ -8,3 +8,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.pyc
+.venv
+.uv
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
