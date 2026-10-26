@@ -14,8 +14,16 @@ uv add polars-fuzzy-match
 
 ## Requirements
 
-- Python >= 3.12
-- Polars >= 0.37
+- CPython 3.11-3.15
+- Polars >= 2.0, < 3
+
+Python 3.15 is the default for local development. Install the development
+dependencies with `uv sync` and run the tests with `uv run pytest tests/`.
+The supported Python versions and both ends of the Polars 2.x range are
+checked in CI. Rust and Python package versions are locked for development
+in `Cargo.lock` and `uv.lock`; published dependencies use compatibility
+ranges instead. Building from source requires Rust 1.95 or newer; the
+development toolchain is pinned to 1.99.1.
 
 ## Usage
 
