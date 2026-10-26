@@ -1,37 +1,27 @@
-#![allow(clippy::unused_unit)]
 use polars::prelude::*;
 use pyo3_polars::derive::polars_expr;
-use pyo3_polars::export::polars_core::utils::CustomIterTools;
-
 use nucleo::Utf32Str;
 use nucleo_matcher::pattern::{CaseMatching, Normalization};
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
 struct FuzzyMatchKwargs {
-    pattern: String,
     normalization: Option<PatternNormalization>,
     case_matching: Option<PatternCaseMatching>,
 }
 
 impl FuzzyMatchKwargs {
-    fn to_pattern(&self) -> nucleo_matcher::pattern::Pattern {
-        let n = {
-            use PatternNormalization::*;
-            match self.normalization.as_ref().unwrap_or(&Smart) {
-                Smart => Normalization::Smart,
-                Never => Normalization::Never,
-            }
+    fn to_pattern(&self, pattern: &str) -> nucleo_matcher::pattern::Pattern {
+        let n = match self.normalization {
+            Some(PatternNormalization::Never) => Normalization::Never,
+            _ => Normalization::Smart,
         };
-        let c = {
-            use PatternCaseMatching::*;
-            match self.case_matching.as_ref().unwrap_or(&Smart) {
-                Respect => CaseMatching::Respect,
-                Ignore => CaseMatching::Ignore,
-                Smart => CaseMatching::Smart,
-            }
+        let c = match self.case_matching {
+            Some(PatternCaseMatching::Respect) => CaseMatching::Respect,
+            Some(PatternCaseMatching::Ignore) => CaseMatching::Ignore,
+            _ => CaseMatching::Smart,
         };
-        nucleo::pattern::Pattern::parse(&self.pattern, c, n)
+        nucleo_matcher::pattern::Pattern::parse(pattern, c, n)
     }
 }
 
@@ -48,26 +38,31 @@ pub enum PatternCaseMatching {
     Smart,
 }
 
-// exact match
 #[polars_expr(output_type=UInt32)]
-fn fuzzy_match_score(haystack: &[Series], kwargs: FuzzyMatchKwargs) -> PolarsResult<Series> {
-    let ca = haystack[0].str()?;
-
-    // config
+fn fuzzy_match_score(inputs: &[Series], kwargs: FuzzyMatchKwargs) -> PolarsResult<Series> {
+    let ca = inputs[0].str()?;
+    let patterns = inputs[1].str()?;
     let config = nucleo::Config::DEFAULT;
     let mut matcher = nucleo::Matcher::new(config);
-    let pattern = kwargs.to_pattern();
     let mut buf = Vec::new();
-    let out: UInt32Chunked = ca
-        .into_iter()
-        .map(|v: Option<&str>| {
-            if let Some(s) = v {
-                let haystack = Utf32Str::new(s, &mut buf);
-                pattern.score(haystack, &mut matcher)
-            } else {
-                None
-            }
-        })
-        .collect_trusted();
+
+    let mut score = |s: &str, pattern: &nucleo_matcher::pattern::Pattern| {
+        let haystack_utf32 = Utf32Str::new(s, &mut buf);
+        pattern.score(haystack_utf32, &mut matcher)
+    };
+    let out: UInt32Chunked = if patterns.len() == 1 {
+        let pattern = patterns.get(0).map(|p| kwargs.to_pattern(p));
+        ca.into_iter()
+            .map(|s| s.and_then(|s| pattern.as_ref().and_then(|p| score(s, p))))
+            .collect()
+    } else if patterns.len() == ca.len() {
+        ca.into_iter()
+            .zip(patterns)
+            .map(|(s, p)| s.zip(p).and_then(|(s, p)| score(s, &kwargs.to_pattern(p))))
+            .collect()
+    } else {
+        polars_bail!(ShapeMismatch: "pattern length {} does not match haystack length {}", patterns.len(), ca.len());
+    };
+
     Ok(out.into_series())
 }
