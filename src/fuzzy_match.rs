@@ -1,7 +1,7 @@
-use polars::prelude::*;
-use pyo3_polars::derive::polars_expr;
 use nucleo::Utf32Str;
 use nucleo_matcher::pattern::{CaseMatching, Normalization};
+use polars::prelude::*;
+use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
@@ -52,12 +52,12 @@ fn fuzzy_match_score(inputs: &[Series], kwargs: FuzzyMatchKwargs) -> PolarsResul
     };
     let out: UInt32Chunked = if patterns.len() == 1 {
         let pattern = patterns.get(0).map(|p| kwargs.to_pattern(p));
-        ca.into_iter()
+        ca.iter()
             .map(|s| s.and_then(|s| pattern.as_ref().and_then(|p| score(s, p))))
             .collect()
     } else if patterns.len() == ca.len() {
-        ca.into_iter()
-            .zip(patterns)
+        ca.iter()
+            .zip(patterns.iter())
             .map(|(s, p)| s.zip(p).and_then(|(s, p)| score(s, &kwargs.to_pattern(p))))
             .collect()
     } else {
