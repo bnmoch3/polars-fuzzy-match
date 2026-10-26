@@ -25,6 +25,18 @@ in `Cargo.lock` and `uv.lock`; published dependencies use compatibility
 ranges instead. Building from source requires Rust 1.95 or newer; the
 development toolchain is pinned to 1.99.1.
 
+## Migrating from 0.1.x to 0.2.0
+
+The `pattern` argument to `fuzzy_match_score` now accepts a Polars expression.
+Plain strings name **columns**, rather than representing literal patterns.
+If you previously wrote `fuzzy_match_score("text", "bar")`, use
+`fuzzy_match_score("text", pl.lit("bar"))` instead. To use a different pattern
+for each row, pass a column name or expression, for example
+`fuzzy_match_score("text", "pattern")`.
+
+Version 0.2.0 requires CPython 3.11 or newer and Polars 2.x. Python 3.8-3.10,
+PyPy, and Polars releases outside the 2.x series are no longer supported.
+
 ## Usage
 
 With both the plugin and polars installed, usage is as follows:
