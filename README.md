@@ -2,10 +2,40 @@
 
 ## Installation
 
-```
-pip install polars
+```bash
 pip install polars-fuzzy-match
 ```
+
+Or with [uv](https://github.com/astral-sh/uv):
+
+```bash
+uv add polars-fuzzy-match
+```
+
+## Requirements
+
+- CPython 3.11-3.15
+- Polars >= 2.0, < 3
+
+Python 3.15 is the default for local development. Install the development
+dependencies with `uv sync` and run the tests with `uv run pytest tests/`.
+The supported Python versions and both ends of the Polars 2.x range are
+checked in CI. Rust and Python package versions are locked for development
+in `Cargo.lock` and `uv.lock`; published dependencies use compatibility
+ranges instead. Building from source requires Rust 1.95 or newer; the
+development toolchain is pinned to 1.99.1.
+
+## Migrating from 0.1.x to 0.2.0
+
+The `pattern` argument to `fuzzy_match_score` now accepts a Polars expression.
+Plain strings name **columns**, rather than representing literal patterns.
+If you previously wrote `fuzzy_match_score("text", "bar")`, use
+`fuzzy_match_score("text", pl.lit("bar"))` instead. To use a different pattern
+for each row, pass a column name or expression, for example
+`fuzzy_match_score("text", "pattern")`.
+
+Version 0.2.0 requires CPython 3.11 or newer and Polars 2.x. Python 3.8-3.10,
+PyPy, and Polars releases outside the 2.x series are no longer supported.
 
 ## Usage
 
@@ -18,14 +48,14 @@ from polars_fuzzy_match import fuzzy_match_score
 
 df = pl.DataFrame(
     {
-        'strs': ['foo', 'foo quz BAR', 'baaarfoo', 'quz'],
+        "strs": ["foo", "foo quz BAR", "baaarfoo", "quz"],
     }
 )
-pattern = 'bar'
+pattern = "bar"
 out = df.with_columns(
     score=fuzzy_match_score(
-        pl.col('strs'),
-        pattern,
+        pl.col("strs"),
+        pl.lit(pattern),
     )
 )
 print(out)
@@ -53,16 +83,16 @@ is to the pattern. Therefore, we can filter out values that do not match and
 order by score:
 
 ```python
-pattern = 'bar'
+pattern = "bar"
 out = (
     df.with_columns(
         score=fuzzy_match_score(
-            pl.col('strs'),
-            pattern,
+            pl.col("strs"),
+            pl.lit(pattern),
         )
     )
-    .filter(pl.col('score').is_not_null())
-    .sort(by='score', descending=True)
+    .filter(pl.col("score").is_not_null())
+    .sort(by="score", descending=True)
 )
 print(out)
 ```
@@ -81,6 +111,16 @@ shape: (2, 2)
 └─────────────┴───────┘
 ```
 
+To compare two columns, pass the pattern column as an expression (or its name):
+
+```python
+df = pl.DataFrame({"text": ["music.mp3", "file.mp3"], "pattern": ["^music", ".mp3$"]})
+out = df.with_columns(score=fuzzy_match_score("text", "pattern"))
+```
+
+Each row uses its own pattern. A string argument names a column; wrap literal
+patterns with `pl.lit("bar")`. Null values in either column produce null scores.
+
 ### Fzf-style search syntax
 
 This plugin supports Fzf-style search syntax for the pattern. It's worth noting
@@ -95,6 +135,29 @@ that this section is taken almost verbatim from the Fzf README:
 | `!fire`   | inverse exact match        | items that do not include `fire`            |
 | `!^music` | inverse prefix exact match | items that do not start with `music`        |
 | `!.mp3$`  | inverse suffix exact match | items that do not end with `.mp3`           |
+
+### Matching options
+
+`fuzzy_match_score` also accepts `case_matching` and `normalization` options:
+
+| Option | Values | Default | Description |
+| ------ | ------ | ------- | ----------- |
+| `case_matching` | `CaseMatching.SMART`, `CaseMatching.IGNORE`, `CaseMatching.RESPECT` | `SMART` | `SMART` ignores case for lowercase patterns and respects case for mixed-case patterns. `IGNORE` always ignores case; `RESPECT` always respects it. |
+| `normalization` | `Normalization.SMART`, `Normalization.NEVER` | `SMART` | `SMART` normalizes search strings when matching; `NEVER` does not. |
+
+For example, to always match without regard to case:
+
+```python
+from polars_fuzzy_match import CaseMatching, fuzzy_match_score
+
+df.with_columns(
+    score=fuzzy_match_score(
+        "text",
+        pl.lit("foo"),
+        case_matching=CaseMatching.IGNORE,
+    )
+)
+```
 
 ## Credits
 

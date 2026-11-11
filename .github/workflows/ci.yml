@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+env:
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
+      - run: uv python install ${{ matrix.python-version }}
+      - name: Run tests with latest compatible Polars
+        run: uv run --python ${{ matrix.python-version }} --locked --with 'polars>=2,<3' pytest tests/ -v
+
+  minimum-polars:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
+      - run: uv python install 3.11
+      - name: Test oldest supported Polars
+        run: |
+          uv run --python 3.11 --locked --with 'polars==2.0.0' python -c "import polars; assert polars.__version__ == '2.0.0'"
+          uv run --python 3.11 --locked --with 'polars==2.0.0' pytest tests/ -v
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: uv run --locked ruff format --check .
+      - name: Lint
+        run: uv run --locked ruff check .
+      - name: Check Rust formatting and lints
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+      - name: Check minimum Rust version
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal
+          cargo +1.95.0 check --locked
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [test, minimum-polars, lint]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
+      - name: Build
+        run: uv build
+      - name: Smoke-test wheel and source distribution
+        run: |
+          uv python install 3.11 3.15
+          uv venv --python 3.11 /tmp/wheel-test
+          uv pip install --python /tmp/wheel-test/bin/python dist/*.whl
+          /tmp/wheel-test/bin/python -I -c "import polars as pl; from polars_fuzzy_match import fuzzy_match_score; assert pl.DataFrame({'s': ['foo']}).select(fuzzy_match_score('s', pl.lit('foo'))).item() is not None"
+          uv venv --python 3.15 /tmp/sdist-test
+          uv pip install --python /tmp/sdist-test/bin/python dist/*.tar.gz
+          /tmp/sdist-test/bin/python -I -c "import polars as pl; from polars_fuzzy_match import fuzzy_match_score; assert pl.DataFrame({'s': ['foo']}).select(fuzzy_match_score('s', pl.lit('foo'))).item() is not None"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
