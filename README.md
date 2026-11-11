@@ -136,6 +136,29 @@ that this section is taken almost verbatim from the Fzf README:
 | `!^music` | inverse prefix exact match | items that do not start with `music`        |
 | `!.mp3$`  | inverse suffix exact match | items that do not end with `.mp3`           |
 
+### Matching options
+
+`fuzzy_match_score` also accepts `case_matching` and `normalization` options:
+
+| Option | Values | Default | Description |
+| ------ | ------ | ------- | ----------- |
+| `case_matching` | `CaseMatching.SMART`, `CaseMatching.IGNORE`, `CaseMatching.RESPECT` | `SMART` | `SMART` ignores case for lowercase patterns and respects case for mixed-case patterns. `IGNORE` always ignores case; `RESPECT` always respects it. |
+| `normalization` | `Normalization.SMART`, `Normalization.NEVER` | `SMART` | `SMART` normalizes search strings when matching; `NEVER` does not. |
+
+For example, to always match without regard to case:
+
+```python
+from polars_fuzzy_match import CaseMatching, fuzzy_match_score
+
+df.with_columns(
+    score=fuzzy_match_score(
+        "text",
+        pl.lit("foo"),
+        case_matching=CaseMatching.IGNORE,
+    )
+)
+```
+
 ## Credits
 
 1. Marco Gorelli's Tutorial on writing Polars Plugin. See
